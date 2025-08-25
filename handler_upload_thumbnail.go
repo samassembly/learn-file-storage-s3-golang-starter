@@ -2,10 +2,12 @@ package main
 
 import (
 	"io"
+	"os"
 	"fmt"
+	"mime"
 	"net/http"
 	"encoding/base64"
-
+	"crypto/rand"
 	"github.com/bootdotdev/learn-file-storage-s3-golang-starter/internal/auth"
 	"github.com/google/uuid"
 )
@@ -44,15 +46,33 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 	}
 	defer file.Close()
 
-	mediaType := header.Header.Get("Content-Type")
-	if mediaType == "" {
-		respondWithError(w, http.StatusBadRequest, "Thumbnail missing Content-Type", nil)
+	mediaType, _, err := mime.ParseMediaType(header.Header.Get("Content-Type"))
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "Invalid Content-Type detected", err)
+		return
+	}
+	if mediaType != "image/jpeg" && mediaType != "image/png" {
+		respondWithError(w, http.StatusBadRequest, "Invalid file type, only jpeg or png permitted", nil)
 		return
 	}
 
-	data, err := io.ReadAll(file)
-	if err != nil  {
-		respondWithError(w, http.StatusBadRequest, "Unable to read file", err)
+	randomBytes := make([]byte, 32)
+	
+	_, err = rand.Read(randomBytes)
+
+	randString := base64.RawURLEncoding.EncodeToString(randomBytes)	
+
+	assetPath := getAssetPath(randString, mediaType)
+	assetDiskPath := cfg.getAssetDiskPath(assetPath)
+
+	dst, err := os.Create(assetDiskPath)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Unable to create file on server", err)
+		return
+	}
+	defer dst.Close()
+	if _, err = io.Copy(dst, file); err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Error saving file", err)
 		return
 	}
 
@@ -63,16 +83,11 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 	}
 	if video.UserID != userID {
 		respondWithError(w, http.StatusUnauthorized, "You do not own this video", err)
-	}
-
-	encodedData := base64.StdEncoding.EncodeToString(data)
-	if encodedData == "" {
-		respondWithError(w, http.StatusInternalServerError, "Could not encode video", err)
 		return
 	}
 
-	dataURL := fmt.Sprintf("data:%s,base64,%s", mediaType, encodedData)
-	video.ThumbnailURL = &dataURL
+	url := cfg.getAssetURL(assetPath)
+	video.ThumbnailURL = &url
 
 	err = cfg.db.UpdateVideo(video)
 	if err != nil {
