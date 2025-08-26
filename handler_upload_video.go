@@ -5,6 +5,7 @@ import (
 	"os"
 	"mime"
 	"net/http"
+	"path/filepath"
 	"crypto/rand"
 	"encoding/base64"
 	"github.com/google/uuid"
@@ -88,7 +89,11 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 	_, err = rand.Read(randomBytes)
 	randString := base64.RawURLEncoding.EncodeToString(randomBytes)	
 
-	key := getAssetPath(randString, mediaType)
+	suffix := getAssetPath(randString, mediaType)
+	aspect, err := cfg.getVideoAspectRatio(t.Name())
+	prefix := cfg.classifyOrientation(aspect)
+	key := filepath.Join(prefix, suffix)
+
 	_, err = cfg.s3Client.PutObject(r.Context(), &s3.PutObjectInput{
 		Bucket:			aws.String(cfg.s3Bucket),
 		Key:			aws.String(key),
