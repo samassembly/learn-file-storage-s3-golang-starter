@@ -118,8 +118,8 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 		respondWithError(w, http.StatusInternalServerError, "Error uploading to s3", err)
 		return
 	}
-
-	url := cfg.getObjectUrl(key)
+	
+	url := "https://" + cfg.s3CfDistribution + "/" + key
 	video.VideoURL = &url
 	err = cfg.db.UpdateVideo(video)
 	if err != nil {
